@@ -26,6 +26,7 @@ ADD_SUBDIRECTORY(src/support)
 ADD_SUBDIRECTORY(src/lexer)
 ADD_SUBDIRECTORY(src/parser)
 ADD_SUBDIRECTORY(src/codegen)
+ADD_SUBDIRECTORY(src/jit)
 
 ADD_EXECUTABLE(axiom src/main.cpp)
 
@@ -38,6 +39,7 @@ LLVM_MAP_COMPONENTS_TO_LIBNAMES(llvm_libs Core Analysis ExecutionEngine OrcJIT S
 SET_PROJECT_WARNINGS(axiom)
 
 TARGET_LINK_LIBRARIES(axiom PRIVATE
+    axiom_jit
     axiom_codegen
     axiom_parser
     axiom_lexer
