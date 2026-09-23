@@ -45,6 +45,8 @@ public:
         : m_op(op), m_lhs(std::move(lhs)), m_rhs(std::move(rhs)) {}
 
     [[nodiscard]] char op() const noexcept { return m_op; }
+    [[nodiscard]] const ExprAST* lhs() const noexcept { return m_lhs.get(); }
+    [[nodiscard]] const ExprAST* rhs() const noexcept { return m_rhs.get(); }
     
     llvm::Value* codegen(CodeGenerator& cg) override;
 
@@ -59,6 +61,9 @@ public:
     CallExpr(std::string callee, std::vector<std::unique_ptr<ExprAST>> args)
         : m_callee(std::move(callee)), m_args(std::move(args)) {}
 
+    [[nodiscard]] const std::string& callee() const noexcept { return m_callee; }
+    [[nodiscard]] const std::vector<std::unique_ptr<ExprAST>>& args() const noexcept { return m_args; }
+
     llvm::Value* codegen(CodeGenerator& cg) override;
 
 private:
@@ -72,6 +77,7 @@ public:
         : m_name(std::move(name)), m_args(std::move(args)) {}
 
     [[nodiscard]] const std::string& name() const noexcept { return m_name; }
+    [[nodiscard]] const std::vector<std::string>& args() const noexcept { return m_args; }
     
     llvm::Function* codegen(CodeGenerator& cg);
 
@@ -84,6 +90,9 @@ class FuncNode {
 public:
     FuncNode(std::unique_ptr<Prototype> proto, std::unique_ptr<ExprAST> body)
         : m_proto(std::move(proto)), m_body(std::move(body)) {}
+
+    [[nodiscard]] const Prototype* proto() const noexcept { return m_proto.get(); }
+    [[nodiscard]] const ExprAST* body() const noexcept { return m_body.get(); }
 
     llvm::Function* codegen(CodeGenerator& cg);
 

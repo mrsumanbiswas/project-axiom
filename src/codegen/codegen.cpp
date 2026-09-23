@@ -11,14 +11,50 @@
 
 namespace axiom {
 
-CodeGenerator::CodeGenerator() {
+CodeGenerator::CodeGenerator(const llvm::DataLayout& layout)
+    : m_layout(layout) {
+    reinitialize();
+}
+
+void CodeGenerator::reinitialize() {
     m_context = std::make_unique<llvm::LLVMContext>();
     m_builder = std::make_unique<llvm::IRBuilder<>>(*m_context);
-    m_module = std::make_unique<llvm::Module>("AxiomJIT", *m_context);
+    m_module = std::make_unique<llvm::Module>("AxiomModule", *m_context);
+    m_module->setDataLayout(m_layout);
+    m_named_values.clear();
+}
+
+std::unique_ptr<llvm::Module> CodeGenerator::take_module() {
+    return std::move(m_module);
+}
+
+std::unique_ptr<llvm::LLVMContext> CodeGenerator::take_context() {
+    return std::move(m_context);
+}
+
+void CodeGenerator::add_prototype(std::unique_ptr<Prototype> proto) {
+    m_function_protos[proto->name()] = std::move(proto);
+}
+
+llvm::Function* CodeGenerator::get_function(std::string_view name) {
+    // 1. Check if the function exists in the current active module
+    if (auto* f = m_module->getFunction(llvm::StringRef(name.data(), name.size()))) {
+        return f;
+    }
+
+    // 2. Check if a prototype was registered from a previous module or extern
+    auto it = m_function_protos.find(std::string(name));
+    if (it != m_function_protos.end()) {
+        return it->second->codegen(*this);
+    }
+
+    return nullptr;
 }
 
 void CodeGenerator::dump() const {
-    m_module->print(llvm::errs(), nullptr);
+    if (m_module) {
+        m_module->print(llvm::errs(), nullptr);
+    }
 }
 
 // 1. Literal Numbers
@@ -61,7 +97,7 @@ llvm::Value* BinaryExpr::codegen(CodeGenerator& cg) {
 
 // 4. Function Invocations
 llvm::Value* CallExpr::codegen(CodeGenerator& cg) {
-    llvm::Function* callee_fn = cg.module()->getFunction(m_callee);
+    llvm::Function* callee_fn = cg.get_function(m_callee);
     if (!callee_fn) {
         std::cerr << "Error: Unknown function referenced: " << m_callee << "\n";
         return nullptr;
@@ -82,7 +118,7 @@ llvm::Value* CallExpr::codegen(CodeGenerator& cg) {
     return cg.builder().CreateCall(callee_fn, args_v, "calltmp");
 }
 
-// 5. Prototypes: Declare function signatures (all args and return types are double)
+// 5. Function Signatures
 llvm::Function* Prototype::codegen(CodeGenerator& cg) {
     std::vector<llvm::Type*> doubles(m_args.size(), llvm::Type::getDoubleTy(cg.context()));
     llvm::FunctionType* ft = llvm::FunctionType::get(
@@ -99,42 +135,36 @@ llvm::Function* Prototype::codegen(CodeGenerator& cg) {
     return f;
 }
 
-// 6. Function Definitions: Attach basic blocks, bind parameters, generate body
+// 6. Function Definitions
 llvm::Function* FuncNode::codegen(CodeGenerator& cg) {
-    // Check if the function prototype was already declared (e.g. via 'extern')
-    llvm::Function* function = cg.module()->getFunction(m_proto->name());
+    auto proto_name = m_proto->name();
+    
+    // Register prototype into cache
+    auto proto_copy = std::make_unique<Prototype>(proto_name, m_proto->args());
+    cg.add_prototype(std::move(proto_copy));
 
-    if (!function) {
-        function = m_proto->codegen(cg);
-    }
-
+    llvm::Function* function = cg.get_function(proto_name);
     if (!function) return nullptr;
 
     if (!function->empty()) {
-        std::cerr << "Error: Function " << m_proto->name() << " cannot be redefined.\n";
+        std::cerr << "Error: Function " << proto_name << " cannot be redefined.\n";
         return nullptr;
     }
 
-    // Create entry basic block
     llvm::BasicBlock* bb = llvm::BasicBlock::Create(cg.context(), "entry", function);
     cg.builder().SetInsertPoint(bb);
 
-    // Bind argument names into the symbol table
     cg.named_values().clear();
     for (auto& arg : function->args()) {
         cg.named_values()[std::string(arg.getName())] = &arg;
     }
 
-    // Codegen function body
     if (llvm::Value* ret_val = m_body->codegen(cg)) {
         cg.builder().CreateRet(ret_val);
-
-        // Verify function integrity (catches malformed SSA, unlinked blocks, etc.)
         llvm::verifyFunction(*function);
         return function;
     }
 
-    // On codegen failure, remove function from module to keep symbol table clean
     function->eraseFromParent();
     return nullptr;
 }
