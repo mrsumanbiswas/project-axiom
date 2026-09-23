@@ -2,25 +2,29 @@
 #include "axiom/ast.h"
 #include <print>
 #include <memory>
+#include <vector>
 
 int main() {
     std::println(">_ Testing Expression & Operator Codegen");
 
     axiom::CodeGenerator cg;
 
-    auto lhs_mul = std::make_unique<axiom::NumExpr>(5.0);
-    auto rhs_mul = std::make_unique<axiom::NumExpr>(2.0);
-    auto mul_expr = std::make_unique<axiom::BinaryExpr>('*', std::move(lhs_mul), std::move(rhs_mul));
+    // Build: def square(x) x * x
+    std::vector<std::string> args = {"x"};
+    auto proto = std::make_unique<axiom::Prototype>("square", std::move(args));
+    auto lhs = std::make_unique<axiom::VarExpr>("x");
+    auto rhs = std::make_unique<axiom::VarExpr>("x");
+    auto body = std::make_unique<axiom::BinaryExpr>('*', std::move(lhs), std::move(rhs));
 
-    auto lhs_add = std::make_unique<axiom::NumExpr>(10.0);
-    auto full_expr = std::make_unique<axiom::BinaryExpr>('+', std::move(lhs_add), std::move(mul_expr));
- 
-    auto* llvm_val = full_expr->codegen(cg);
+    axiom::FuncNode func(std::move(proto), std::move(body));
 
-    if (llvm_val) {
-        std::println("Success! Expression compiled cleanly without validation faults.");
+    llvm::Function* lf = func.codegen(cg);
+
+    if (lf) {
+        std::println("Generated LLVM IR Function:");
+        cg.dump();
     } else {
-        std::println("Failed to compile target expression branches.");
+        std::println("Failed to generate function IR.");
     }
 
     return 0;
