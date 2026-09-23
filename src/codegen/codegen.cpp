@@ -6,6 +6,7 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/IR/Instructions.h>
 #include <iostream>
 #include <vector>
 
@@ -37,12 +38,10 @@ void CodeGenerator::add_prototype(std::unique_ptr<Prototype> proto) {
 }
 
 llvm::Function* CodeGenerator::get_function(std::string_view name) {
-    // 1. Check if the function exists in the current active module
     if (auto* f = m_module->getFunction(llvm::StringRef(name.data(), name.size()))) {
         return f;
     }
 
-    // 2. Check if a prototype was registered from a previous module or extern
     auto it = m_function_protos.find(std::string(name));
     if (it != m_function_protos.end()) {
         return it->second->codegen(*this);
@@ -118,7 +117,54 @@ llvm::Value* CallExpr::codegen(CodeGenerator& cg) {
     return cg.builder().CreateCall(callee_fn, args_v, "calltmp");
 }
 
-// 5. Function Signatures
+// 5. If-Then-Else Expressions
+llvm::Value* IfExpr::codegen(CodeGenerator& cg) {
+    llvm::Value* cond_v = m_cond->codegen(cg);
+    if (!cond_v) return nullptr;
+
+    // Convert condition to boolean by comparing non-equal to 0.0
+    cond_v = cg.builder().CreateFCmpONE(
+        cond_v, llvm::ConstantFP::get(cg.context(), llvm::APFloat(0.0)), "ifcond");
+
+    llvm::Function* parent_fn = cg.builder().GetInsertBlock()->getParent();
+
+    // Create then, else, and continuation basic blocks
+    llvm::BasicBlock* then_bb = llvm::BasicBlock::Create(cg.context(), "then", parent_fn);
+    llvm::BasicBlock* else_bb = llvm::BasicBlock::Create(cg.context(), "else");
+    llvm::BasicBlock* merge_bb = llvm::BasicBlock::Create(cg.context(), "ifcont");
+
+    cg.builder().CreateCondBr(cond_v, then_bb, else_bb);
+
+    // Emit 'then' block
+    cg.builder().SetInsertPoint(then_bb);
+    llvm::Value* then_v = m_then->codegen(cg);
+    if (!then_v) return nullptr;
+
+    cg.builder().CreateBr(merge_bb);
+    then_bb = cg.builder().GetInsertBlock();
+
+    // Emit 'else' block
+    parent_fn->insert(parent_fn->end(), else_bb);
+    cg.builder().SetInsertPoint(else_bb);
+    llvm::Value* else_v = m_else->codegen(cg);
+    if (!else_v) return nullptr;
+
+    cg.builder().CreateBr(merge_bb);
+    else_bb = cg.builder().GetInsertBlock();
+
+    // Emit 'merge' continuation block with PHI node
+    parent_fn->insert(parent_fn->end(), merge_bb);
+    cg.builder().SetInsertPoint(merge_bb);
+
+    llvm::PHINode* phi = cg.builder().CreatePHI(
+        llvm::Type::getDoubleTy(cg.context()), 2, "iftmp");
+
+    phi->addIncoming(then_v, then_bb);
+    phi->addIncoming(else_v, else_bb);
+    return phi;
+}
+
+// 6. Function Signatures
 llvm::Function* Prototype::codegen(CodeGenerator& cg) {
     std::vector<llvm::Type*> doubles(m_args.size(), llvm::Type::getDoubleTy(cg.context()));
     llvm::FunctionType* ft = llvm::FunctionType::get(
@@ -135,11 +181,10 @@ llvm::Function* Prototype::codegen(CodeGenerator& cg) {
     return f;
 }
 
-// 6. Function Definitions
+// 7. Function Definitions
 llvm::Function* FuncNode::codegen(CodeGenerator& cg) {
     auto proto_name = m_proto->name();
     
-    // Register prototype into cache
     auto proto_copy = std::make_unique<Prototype>(proto_name, m_proto->args());
     cg.add_prototype(std::move(proto_copy));
 

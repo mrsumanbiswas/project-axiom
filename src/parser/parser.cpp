@@ -98,10 +98,42 @@ Expected<std::unique_ptr<ExprAST>> Parser::parse_paren_expr() {
     return expr;
 }
 
+Expected<std::unique_ptr<ExprAST>> Parser::parse_if_expr() {
+    consume(); // eat 'if'
+
+    auto cond = parse_expression();
+    if (!cond) return cond;
+
+    if (m_current_tok.kind != TokenKind::Then) {
+        return std::unexpected(CompilerError{
+            .message = "Expected 'then' after if condition",
+            .location = m_current_tok.location
+        });
+    }
+    consume(); // eat 'then'
+
+    auto then_expr = parse_expression();
+    if (!then_expr) return then_expr;
+
+    if (m_current_tok.kind != TokenKind::Else) {
+        return std::unexpected(CompilerError{
+            .message = "Expected 'else' after then branch",
+            .location = m_current_tok.location
+        });
+    }
+    consume(); // eat 'else'
+
+    auto else_expr = parse_expression();
+    if (!else_expr) return else_expr;
+
+    return std::make_unique<IfExpr>(std::move(*cond), std::move(*then_expr), std::move(*else_expr));
+}
+
 Expected<std::unique_ptr<ExprAST>> Parser::parse_primary() {
     switch (m_current_tok.kind) {
         case TokenKind::Identifier: return parse_identifier_expr();
         case TokenKind::Number:     return parse_number_expr();
+        case TokenKind::If:         return parse_if_expr();
         case TokenKind::Op:
             if (m_current_tok.lexeme == "(") return parse_paren_expr();
             break;

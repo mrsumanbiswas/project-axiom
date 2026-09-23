@@ -71,6 +71,27 @@ private:
     std::vector<std::unique_ptr<ExprAST>> m_args;
 };
 
+class IfExpr : public ExprAST {
+public:
+    IfExpr(std::unique_ptr<ExprAST> cond,
+           std::unique_ptr<ExprAST> then_expr,
+           std::unique_ptr<ExprAST> else_expr)
+        : m_cond(std::move(cond)),
+          m_then(std::move(then_expr)),
+          m_else(std::move(else_expr)) {}
+
+    [[nodiscard]] const ExprAST* cond() const noexcept { return m_cond.get(); }
+    [[nodiscard]] const ExprAST* then_expr() const noexcept { return m_then.get(); }
+    [[nodiscard]] const ExprAST* else_expr() const noexcept { return m_else.get(); }
+
+    llvm::Value* codegen(CodeGenerator& cg) override;
+
+private:
+    std::unique_ptr<ExprAST> m_cond;
+    std::unique_ptr<ExprAST> m_then;
+    std::unique_ptr<ExprAST> m_else;
+};
+
 class Prototype {
 public:
     Prototype(std::string name, std::vector<std::string> args)

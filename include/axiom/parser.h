@@ -30,6 +30,7 @@ private:
     Expected<std::unique_ptr<ExprAST>> parse_number_expr();
     Expected<std::unique_ptr<ExprAST>> parse_identifier_expr();
     Expected<std::unique_ptr<ExprAST>> parse_paren_expr();
+    Expected<std::unique_ptr<ExprAST>> parse_if_expr();
     Expected<std::unique_ptr<ExprAST>> parse_expression();
 
     // Precedence climbing

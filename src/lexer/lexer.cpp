@@ -1,5 +1,4 @@
 #include "axiom/lexer.h"
-#include <print>
 #include <cctype>
 
 namespace axiom {
@@ -60,8 +59,9 @@ Expected<Token> Lexer::next_token() {
         SourceLocation token_start = m_loc;
         size_t start_cursor = m_cursor;
 
-        while (!is_eof() && (std::isalnum(peek()) || peek() == '_'))
-        advance();
+        while (!is_eof() && (std::isalnum(peek()) || peek() == '_')) {
+            advance();
+        }
         
         std::string_view lexeme = m_source.substr(start_cursor, m_cursor - start_cursor);
         
@@ -70,6 +70,12 @@ Expected<Token> Lexer::next_token() {
             kind = TokenKind::Def;
         } else if (lexeme == "extern") {
             kind = TokenKind::Extern;
+        } else if (lexeme == "if") {
+            kind = TokenKind::If;
+        } else if (lexeme == "then") {
+            kind = TokenKind::Then;
+        } else if (lexeme == "else") {
+            kind = TokenKind::Else;
         }
 
         return Token{
@@ -80,9 +86,8 @@ Expected<Token> Lexer::next_token() {
     }
 
     if (std::isdigit(c) || c == '.') {
-        
         if (c == '.' && (m_cursor + 1 >= m_source.size() || !std::isdigit(m_source[m_cursor + 1]))) {
-            
+            // Stray dot handled below as operator
         } else {
             SourceLocation token_start = m_loc;
             size_t start_cursor = m_cursor;
